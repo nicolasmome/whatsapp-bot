@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+
+# Tokens (contiene la sesión de WhatsApp)
+tokens/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+
+# Sistema operativo
+.DS_Store
