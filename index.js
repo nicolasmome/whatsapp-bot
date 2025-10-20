@@ -1,4 +1,6 @@
 const wppconnect = require('@wppconnect-team/wppconnect');
+const QRCode = require('qrcode');
+const fs = require('fs');
 
 // Función principal para iniciar el bot
 async function start() {
@@ -8,15 +10,38 @@ async function start() {
     .create({
       session: 'mi-sesion', // Nombre de la sesión
       autoClose: 300000, // 5 minutos para escanear el QR (en milisegundos)
-      catchQR: (base64Qrimg, asciiQR, attempts, urlCode) => {
+      catchQR: async (base64Qrimg, asciiQR, attempts, urlCode) => {
         console.log('\n===========================================');
         console.log('ESCANEA EL CÓDIGO QR CON TU WHATSAPP:');
         console.log('Tienes 5 MINUTOS para escanearlo');
         console.log('===========================================\n');
-        console.log(asciiQR); // Muestra el QR en la terminal
-        console.log('\nO abre este link en tu navegador:');
+
+        // Guardar QR como imagen PNG
+        const qrPath = '/tmp/qr-code.png';
+        const base64Data = base64Qrimg.replace(/^data:image\/png;base64,/, '');
+        fs.writeFileSync(qrPath, base64Data, 'base64');
+        console.log(`✅ QR guardado en: ${qrPath}`);
+
+        // Generar un QR más grande para mejor escaneo
+        try {
+          const largeQrPath = '/tmp/qr-code-large.png';
+          await QRCode.toFile(largeQrPath, urlCode, {
+            width: 600,
+            margin: 2
+          });
+          console.log(`✅ QR grande guardado en: ${largeQrPath}`);
+        } catch (err) {
+          console.error('Error generando QR grande:', err);
+        }
+
+        console.log('\n📱 OPCIÓN 1: Descarga el QR desde Railway');
+        console.log('   Ve a la pestaña "Data" en Railway y descarga: /tmp/qr-code-large.png');
+
+        console.log('\n🔗 OPCIÓN 2: Usa este link (expira en 20 segundos):');
         console.log(urlCode);
-        console.log(`\nIntento: ${attempts}`);
+
+        console.log(`\n🔄 Intento: ${attempts}`);
+        console.log('\n===========================================\n');
       },
       statusFind: (statusSession, session) => {
         console.log('Estado de la sesión:', statusSession);
