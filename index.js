@@ -130,8 +130,12 @@ const swaggerOptions = {
     },
     servers: [
       {
+        url: 'https://whatsapp-bot-production-de76.up.railway.app',
+        description: 'Servidor Railway (Producción)'
+      },
+      {
         url: `http://localhost:${PORT}`,
-        description: 'Servidor local'
+        description: 'Servidor local (Desarrollo)'
       }
     ],
   },
