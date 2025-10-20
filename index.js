@@ -10,6 +10,11 @@ const bodyParser = require('body-parser');
 // Variable global para almacenar el cliente
 let globalClient = null;
 
+// Usar /data para persistencia en Railway (volumen persistente)
+// Si no existe, usar ./tokens como fallback
+const dataPath = fs.existsSync('/data') ? '/data' : './tokens';
+console.log(`📁 Usando directorio para tokens: ${dataPath}`);
+
 // Función principal para iniciar el bot
 async function start() {
   console.log('Iniciando bot de WhatsApp...');
@@ -17,6 +22,7 @@ async function start() {
   wppconnect
     .create({
       session: 'mi-sesion', // Nombre de la sesión
+      folderNameToken: dataPath, // Usar directorio persistente
       autoClose: 300000, // 5 minutos para escanear el QR (en milisegundos)
       catchQR: async (base64Qrimg, asciiQR, attempts, urlCode) => {
         console.log('\n===========================================');
