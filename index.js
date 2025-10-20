@@ -1,6 +1,8 @@
 const wppconnect = require('@wppconnect-team/wppconnect');
 const QRCode = require('qrcode');
 const fs = require('fs');
+const http = require('http');
+const path = require('path');
 
 // Función principal para iniciar el bot
 async function start() {
@@ -99,6 +101,43 @@ function start_bot(client) {
 
   console.log('El bot está escuchando mensajes...');
 }
+
+// Crear servidor HTTP para descargar el QR
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  if (req.url === '/qr') {
+    const qrPath = '/tmp/qr-code-large.png';
+    if (fs.existsSync(qrPath)) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      fs.createReadStream(qrPath).pipe(res);
+    } else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('QR code not generated yet. Wait for bot to start...');
+    }
+  } else if (req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`
+      <html>
+        <head><title>WhatsApp Bot QR</title></head>
+        <body style="text-align:center; padding:50px; font-family:Arial;">
+          <h1>WhatsApp Bot - QR Code</h1>
+          <p>Escanea este QR con WhatsApp para vincular el bot:</p>
+          <img src="/qr" style="max-width:600px; border:2px solid #000;" />
+          <p><a href="/qr" download="whatsapp-qr.png">Descargar QR</a></p>
+          <p><small>El QR se renueva cada ~50 segundos</small></p>
+        </body>
+      </html>
+    `);
+  } else {
+    res.writeHead(404);
+    res.end('Not found');
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 Servidor web corriendo en puerto ${PORT}`);
+  console.log(`📱 Abre esta URL para ver el QR: https://tu-app.railway.app/`);
+});
 
 // Iniciar el bot
 start();
