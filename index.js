@@ -24,6 +24,17 @@ async function start() {
       },
       headless: true, // Ejecuta Chrome en modo headless (sin interfaz gráfica)
       logQR: true, // Muestra el QR en la consola
+      puppeteerOptions: {
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-gpu'
+        ]
+      }
     })
     .then((client) => start_bot(client))
     .catch((error) => {
