@@ -1,8 +1,14 @@
 const wppconnect = require('@wppconnect-team/wppconnect');
 const QRCode = require('qrcode');
 const fs = require('fs');
-const http = require('http');
-const path = require('path');
+const express = require('express');
+const swaggerJsdoc = require('swagger-jsdoc');
+const swaggerUi = require('swagger-ui-express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+
+// Variable global para almacenar el cliente
+let globalClient = null;
 
 // Función principal para iniciar el bot
 async function start() {
@@ -73,6 +79,9 @@ async function start() {
 function start_bot(client) {
   console.log('\n✓ Bot conectado exitosamente!\n');
 
+  // Guardar el cliente globalmente para usarlo en la API
+  globalClient = client;
+
   // Escuchar mensajes entrantes
   client.onMessage(async (message) => {
     console.log('Mensaje recibido:', message.body);
@@ -102,41 +111,336 @@ function start_bot(client) {
   console.log('El bot está escuchando mensajes...');
 }
 
-// Crear servidor HTTP para descargar el QR
+// Configurar Express
+const app = express();
 const PORT = process.env.PORT || 3000;
-const server = http.createServer((req, res) => {
-  if (req.url === '/qr') {
-    const qrPath = '/tmp/qr-code-large.png';
-    if (fs.existsSync(qrPath)) {
-      res.writeHead(200, { 'Content-Type': 'image/png' });
-      fs.createReadStream(qrPath).pipe(res);
-    } else {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('QR code not generated yet. Wait for bot to start...');
-    }
-  } else if (req.url === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(`
-      <html>
-        <head><title>WhatsApp Bot QR</title></head>
-        <body style="text-align:center; padding:50px; font-family:Arial;">
-          <h1>WhatsApp Bot - QR Code</h1>
-          <p>Escanea este QR con WhatsApp para vincular el bot:</p>
-          <img src="/qr" style="max-width:600px; border:2px solid #000;" />
-          <p><a href="/qr" download="whatsapp-qr.png">Descargar QR</a></p>
-          <p><small>El QR se renueva cada ~50 segundos</small></p>
-        </body>
-      </html>
-    `);
+
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Configuración de Swagger
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'WhatsApp Bot API',
+      version: '1.0.0',
+      description: 'API REST para controlar el bot de WhatsApp',
+    },
+    servers: [
+      {
+        url: `http://localhost:${PORT}`,
+        description: 'Servidor local'
+      }
+    ],
+  },
+  apis: ['./index.js'], // Path to the API docs
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+// Ruta para la página principal (QR Code)
+app.get('/', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>WhatsApp Bot</title></head>
+      <body style="text-align:center; padding:50px; font-family:Arial;">
+        <h1>WhatsApp Bot - API REST</h1>
+        <p>Escanea este QR con WhatsApp para vincular el bot:</p>
+        <img src="/qr" style="max-width:600px; border:2px solid #000;" />
+        <p><a href="/qr" download="whatsapp-qr.png">Descargar QR</a></p>
+        <p><small>El QR se renueva cada ~50 segundos</small></p>
+        <hr>
+        <h2>📚 Documentación de la API</h2>
+        <p><a href="/api-docs" style="font-size:20px; color:#0066cc;">Ver Swagger UI</a></p>
+      </body>
+    </html>
+  `);
+});
+
+// Ruta para servir el QR
+app.get('/qr', (req, res) => {
+  const qrPath = '/tmp/qr-code-large.png';
+  if (fs.existsSync(qrPath)) {
+    res.sendFile(qrPath);
   } else {
-    res.writeHead(404);
-    res.end('Not found');
+    res.status(404).send('QR code not generated yet. Wait for bot to start...');
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`🌐 Servidor web corriendo en puerto ${PORT}`);
-  console.log(`📱 Abre esta URL para ver el QR: https://tu-app.railway.app/`);
+/**
+ * @swagger
+ * /api/status:
+ *   get:
+ *     summary: Obtener el estado del bot
+ *     description: Devuelve si el bot está conectado o no
+ *     responses:
+ *       200:
+ *         description: Estado del bot
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 connected:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Bot conectado"
+ */
+app.get('/api/status', (req, res) => {
+  if (globalClient) {
+    res.json({
+      connected: true,
+      message: 'Bot conectado'
+    });
+  } else {
+    res.json({
+      connected: false,
+      message: 'Bot no conectado. Escanea el QR code.'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/send-message:
+ *   post:
+ *     summary: Enviar mensaje de WhatsApp
+ *     description: Envía un mensaje de texto a un número de WhatsApp
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - number
+ *               - message
+ *             properties:
+ *               number:
+ *                 type: string
+ *                 description: Número de WhatsApp (con código de país, sin +)
+ *                 example: "573001234567"
+ *               message:
+ *                 type: string
+ *                 description: Mensaje a enviar
+ *                 example: "Hola, este es un mensaje automático"
+ *     responses:
+ *       200:
+ *         description: Mensaje enviado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Mensaje enviado"
+ *       400:
+ *         description: Faltan parámetros requeridos
+ *       503:
+ *         description: Bot no conectado
+ */
+app.post('/api/send-message', async (req, res) => {
+  try {
+    const { number, message } = req.body;
+
+    if (!number || !message) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren los campos: number y message'
+      });
+    }
+
+    if (!globalClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'Bot no conectado. Escanea el QR code primero.'
+      });
+    }
+
+    // Formatear número (agregar @c.us si no lo tiene)
+    const formattedNumber = number.includes('@c.us') ? number : `${number}@c.us`;
+
+    await globalClient.sendText(formattedNumber, message);
+
+    res.json({
+      success: true,
+      message: 'Mensaje enviado',
+      to: formattedNumber
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/send-image:
+ *   post:
+ *     summary: Enviar imagen por WhatsApp
+ *     description: Envía una imagen desde una URL a un número de WhatsApp
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - number
+ *               - imageUrl
+ *             properties:
+ *               number:
+ *                 type: string
+ *                 description: Número de WhatsApp (con código de país, sin +)
+ *                 example: "573001234567"
+ *               imageUrl:
+ *                 type: string
+ *                 description: URL de la imagen
+ *                 example: "https://picsum.photos/200"
+ *               caption:
+ *                 type: string
+ *                 description: Texto opcional para acompañar la imagen
+ *                 example: "Mira esta imagen"
+ *     responses:
+ *       200:
+ *         description: Imagen enviada exitosamente
+ *       400:
+ *         description: Faltan parámetros requeridos
+ *       503:
+ *         description: Bot no conectado
+ */
+app.post('/api/send-image', async (req, res) => {
+  try {
+    const { number, imageUrl, caption } = req.body;
+
+    if (!number || !imageUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren los campos: number e imageUrl'
+      });
+    }
+
+    if (!globalClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'Bot no conectado. Escanea el QR code primero.'
+      });
+    }
+
+    const formattedNumber = number.includes('@c.us') ? number : `${number}@c.us`;
+
+    await globalClient.sendImage(
+      formattedNumber,
+      imageUrl,
+      'image',
+      caption || ''
+    );
+
+    res.json({
+      success: true,
+      message: 'Imagen enviada',
+      to: formattedNumber
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/send-file:
+ *   post:
+ *     summary: Enviar archivo por WhatsApp
+ *     description: Envía un archivo desde una URL a un número de WhatsApp
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - number
+ *               - fileUrl
+ *             properties:
+ *               number:
+ *                 type: string
+ *                 description: Número de WhatsApp (con código de país, sin +)
+ *                 example: "573001234567"
+ *               fileUrl:
+ *                 type: string
+ *                 description: URL del archivo
+ *                 example: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+ *               filename:
+ *                 type: string
+ *                 description: Nombre del archivo
+ *                 example: "documento.pdf"
+ *     responses:
+ *       200:
+ *         description: Archivo enviado exitosamente
+ *       400:
+ *         description: Faltan parámetros requeridos
+ *       503:
+ *         description: Bot no conectado
+ */
+app.post('/api/send-file', async (req, res) => {
+  try {
+    const { number, fileUrl, filename } = req.body;
+
+    if (!number || !fileUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren los campos: number y fileUrl'
+      });
+    }
+
+    if (!globalClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'Bot no conectado. Escanea el QR code primero.'
+      });
+    }
+
+    const formattedNumber = number.includes('@c.us') ? number : `${number}@c.us`;
+
+    await globalClient.sendFile(
+      formattedNumber,
+      fileUrl,
+      filename || 'file',
+      ''
+    );
+
+    res.json({
+      success: true,
+      message: 'Archivo enviado',
+      to: formattedNumber
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Iniciar servidor Express
+app.listen(PORT, () => {
+  console.log(`🌐 Servidor API corriendo en puerto ${PORT}`);
+  console.log(`📚 Documentación Swagger: http://localhost:${PORT}/api-docs`);
+  console.log(`📱 QR Code: http://localhost:${PORT}/`);
 });
 
 // Iniciar el bot
