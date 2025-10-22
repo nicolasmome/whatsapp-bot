@@ -1,6 +1,7 @@
 const wppconnect = require('@wppconnect-team/wppconnect');
 const QRCode = require('qrcode');
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
@@ -441,7 +442,6 @@ app.post('/api/reset-session', async (req, res) => {
     }
 
     // Eliminar tokens de la sesión
-    const path = require('path');
     const sessionPath = path.join(dataPath, 'mi-sesion');
 
     if (fs.existsSync(sessionPath)) {
