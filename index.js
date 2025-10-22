@@ -155,16 +155,50 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <head><title>WhatsApp Bot</title></head>
+      <head>
+        <title>WhatsApp Bot</title>
+        <meta http-equiv="refresh" content="30">
+      </head>
       <body style="text-align:center; padding:50px; font-family:Arial;">
         <h1>WhatsApp Bot - API REST</h1>
         <p>Escanea este QR con WhatsApp para vincular el bot:</p>
         <img src="/qr" style="max-width:600px; border:2px solid #000;" />
         <p><a href="/qr" download="whatsapp-qr.png">Descargar QR</a></p>
-        <p><small>El QR se renueva cada ~50 segundos</small></p>
+        <p><small>El QR se renueva cada ~50 segundos. La página se actualiza automáticamente.</small></p>
+        <hr>
+        <h2>⚠️ ¿El QR no funciona?</h2>
+        <p>Si el código QR dice "no se puede generar la vinculación", haz clic aquí:</p>
+        <button onclick="resetSession()" style="padding:15px 30px; font-size:16px; background-color:#dc3545; color:white; border:none; border-radius:5px; cursor:pointer;">
+          🔄 Resetear Sesión y Generar Nuevo QR
+        </button>
+        <p id="status" style="margin-top:20px; font-weight:bold;"></p>
         <hr>
         <h2>📚 Documentación de la API</h2>
         <p><a href="/api-docs" style="font-size:20px; color:#0066cc;">Ver Swagger UI</a></p>
+        <script>
+          async function resetSession() {
+            const statusEl = document.getElementById('status');
+            statusEl.style.color = 'orange';
+            statusEl.textContent = 'Limpiando sesión...';
+
+            try {
+              const response = await fetch('/api/reset-session', { method: 'POST' });
+              const data = await response.json();
+
+              if (data.success) {
+                statusEl.style.color = 'green';
+                statusEl.textContent = '✅ ' + data.message + ' - Espera 30 segundos y recarga la página.';
+                setTimeout(() => window.location.reload(), 30000);
+              } else {
+                statusEl.style.color = 'red';
+                statusEl.textContent = '❌ Error: ' + data.error;
+              }
+            } catch (error) {
+              statusEl.style.color = 'red';
+              statusEl.textContent = '❌ Error: ' + error.message;
+            }
+          }
+        </script>
       </body>
     </html>
   `);
@@ -363,6 +397,95 @@ app.post('/api/send-image', async (req, res) => {
       to: formattedNumber
     });
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/reset-session:
+ *   post:
+ *     summary: Resetear la sesión de WhatsApp
+ *     description: Elimina la sesión actual y reinicia el bot para generar un nuevo código QR
+ *     responses:
+ *       200:
+ *         description: Sesión reseteada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Sesión eliminada. El servidor se reiniciará en 5 segundos."
+ */
+app.post('/api/reset-session', async (req, res) => {
+  try {
+    console.log('🔄 Reseteo de sesión solicitado...');
+
+    // Cerrar cliente actual si existe
+    if (globalClient) {
+      try {
+        await globalClient.close();
+        console.log('✅ Cliente cerrado');
+      } catch (error) {
+        console.log('⚠️ Error cerrando cliente:', error.message);
+      }
+      globalClient = null;
+    }
+
+    // Eliminar tokens de la sesión
+    const path = require('path');
+    const sessionPath = path.join(dataPath, 'mi-sesion');
+
+    if (fs.existsSync(sessionPath)) {
+      const deleteFolderRecursive = (folderPath) => {
+        if (fs.existsSync(folderPath)) {
+          fs.readdirSync(folderPath).forEach((file) => {
+            const curPath = path.join(folderPath, file);
+            if (fs.lstatSync(curPath).isDirectory()) {
+              deleteFolderRecursive(curPath);
+            } else {
+              fs.unlinkSync(curPath);
+            }
+          });
+          fs.rmdirSync(folderPath);
+        }
+      };
+
+      deleteFolderRecursive(sessionPath);
+      console.log('✅ Sesión eliminada:', sessionPath);
+    }
+
+    // Eliminar QR codes antiguos
+    const qrFiles = ['/tmp/qr-code.png', '/tmp/qr-code-large.png'];
+    qrFiles.forEach(file => {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+        console.log('✅ QR eliminado:', file);
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Sesión eliminada. El servidor se reiniciará en 5 segundos para generar un nuevo QR.'
+    });
+
+    // Reiniciar el proceso después de 5 segundos
+    console.log('⏳ Reiniciando en 5 segundos...');
+    setTimeout(() => {
+      console.log('🔄 Reiniciando proceso...');
+      process.exit(0); // Railway reiniciará el contenedor automáticamente
+    }, 5000);
+
+  } catch (error) {
+    console.error('❌ Error en reset:', error);
     res.status(500).json({
       success: false,
       error: error.message
